@@ -1,11 +1,8 @@
 "use client"
 
 import { useState } from "react";
-import Router from "next/router";
 
 const page = () => {
-
-
 
   const [fSize, setFSize] = useState("30px");
   const [fColor, setFColor] = useState("black");
@@ -142,7 +139,6 @@ const page = () => {
 
       const responseData = await response.json();
       console.log("Data sent to backend successfully:", responseData);
-      Router.push("/success"); // Redirect to success page after saving
     } catch (error) {
       console.error("Error:", error);
     }

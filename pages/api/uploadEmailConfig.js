@@ -61,14 +61,21 @@ export default async function handler(req, res) {
         const image = files.image ? `/uploads/${files.image[0].newFilename}` : null;
 
         // MongoDB client connection
-        const client = await MongoClient.connect(process.env.MONGODB_URI);
+        let client;
+        try {
+          client = await MongoClient.connect(process.env.MONGODB_URI, { useUnifiedTopology: true });
+        } catch (dbConnError) {
+          console.error("Error connecting to MongoDB:", dbConnError);
+          return res.status(500).json({ error: "Failed to connect to MongoDB" });
+        }
+
         const db = client.db("EMAIL_BUILDER");
         const collection = db.collection("template");
 
         try {
           // Find the most recent template, if exists
           const latestTemplate = await collection.find().sort({ createdAt: -1 }).limit(1).toArray();
-          
+
           if (latestTemplate.length > 0) {
             // If a latest template exists, update it
             const result = await collection.updateOne(
