@@ -66,6 +66,10 @@ export default async function handler(req, res) {
       const logo = files.logo ? `/uploads/${files.logo.newFilename}` : null;
       const image = files.image ? `/uploads/${files.image.newFilename}` : null;
 
+      if (!logo || !image) {
+        console.error("File upload issue: Missing logo or image file");
+      }
+
       // MongoDB connection
       const client = await MongoClient.connect(process.env.MONGODB_URI, {
         useNewUrlParser: true,
@@ -136,8 +140,8 @@ export default async function handler(req, res) {
         data: result,
       });
     } catch (error) {
-      console.error("Error in handler:", error);
-      res.status(500).json({ error: "Internal server error" });
+      console.error("Error in handler:", error.massage, error.stack);
+      res.status(500).json({ error: "Internal server error", details: error.message });
     }
   } else {
     res.status(405).end(`Method ${req.method} Not Allowed`);
