@@ -95,7 +95,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       async function fetchData() {
         try {
-          const response = await fetch('https://email-template-maker-w5ag-cur03dgmb-46-debugs-projects.vercel.app/api/renderAndDownloadTemplate');
+          const response = await fetch('http://localhost:3000/api/renderAndDownloadTemplate');
           const data = await response.json();
 
           console.log("API Response:", data[0]); // Debug the response here
