@@ -26,21 +26,44 @@ const parseForm = (req) => {
 
   return new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
-      if (err) reject(err);
+      if (err) {
+        console.error("Formidable file parsing error:", err.message, err.stack);
+        reject(err);
+      }
       else resolve({ fields, files });
     });
   });
 };
 
 export default async function handler(req, res) {
-  // Apply CORS middleware
-  await nextCors(req, res, {
-    // Allow all origins during development; adjust for production
-    origin: "https://email-template-maker-w5ag-fisfaeq4h-46-debugs-projects.vercel.app/",
-    methods: ["POST", "GET", "OPTIONS"],
-    optionsSuccessStatus: 200, // Handle older browsers (legacy CORS support)
-  });
+  try {
+    // Apply CORS
+    await nextCors(req, res, {
+      origin: "*",
+      methods: ["POST", "GET", "OPTIONS"],
+      optionsSuccessStatus: 200,
+    });
 
+    if (req.method === "POST") {
+      const { fields, files } = await parseForm(req);
+
+      const logo = files.logo && files.logo.newFilename ? `/uploads/${files.logo.newFilename}` : null;
+      const image = files.image && files.image.newFilename ? `/uploads/${files.image.newFilename}` : null;
+
+      console.log("Logo path:", logo);
+      console.log("Image path:", image);
+
+      // MongoDB logic here...
+
+      res.status(200).json({ message: "Template saved/updated successfully" });
+    } else {
+      res.status(405).end(`Method ${req.method} Not Allowed`);
+    }
+  } catch (error) {
+    console.error("Error in handler:", error.message, error.stack);
+    res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+}
   if (req.method === "POST") {
     try {
       // Parse the form data
@@ -63,12 +86,33 @@ export default async function handler(req, res) {
         ftAlignment,
       } = fields;
 
-      const logo = files.logo ? `/uploads/${files.logo.newFilename}` : null;
-      const image = files.image ? `/uploads/${files.image.newFilename}` : null;
+      const logo = files.logo && files.logo.newFilename ? `/uploads/${files.logo.newFilename}` : null;
+      const image = files.image && files.image.newFilename ? `/uploads/${files.image.newFilename}` : null;
 
-      if (!logo || !image) {
-        console.error("File upload issue: Missing logo or image file");
+
+      if (!logo && files.logo) {
+        console.error("File upload issue: 'logo' file is missing 'newFilename'");
       }
+
+      if (!image && files.image) {
+        console.error("File upload issue: 'image' file is missing 'newFilename'");
+      }
+
+      if (!files.logo && !files.image) {
+        console.error("No files uploaded.");
+      }
+
+      if (files.logo && !fs.existsSync(path.join(uploadDir, files.logo.newFilename))) {
+        console.error("Uploaded 'logo' file does not exist:", files.logo.newFilename);
+      }
+
+      if (files.image && !fs.existsSync(path.join(uploadDir, files.image.newFilename))) {
+        console.error("Uploaded 'image' file does not exist:", files.image.newFilename);
+      }
+
+      form.on('error', (err) => {
+        console.error('Formidable error occurred:', err.message);
+      });
 
       // MongoDB connection
       const client = await MongoClient.connect(process.env.MONGODB_URI, {
