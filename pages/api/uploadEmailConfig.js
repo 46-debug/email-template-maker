@@ -15,22 +15,26 @@ const parseForm = (req) => {
   const uploadDir = path.join(process.cwd(), "public/uploads");
   if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
+    console.log(`Created upload directory at ${uploadDir}`);
   }
 
   const form = formidable({
     uploadDir,
     keepExtensions: true,
-    maxFileSize: 10 * 1024 * 1024, // Max file size (10 MB)
-    filename: (name, ext, part) => `${Date.now()}-${part.originalFilename}`, // Custom file naming
+    maxFileSize: 10 * 1024 * 1024, // 10 MB
+    filename: (name, ext, part) => `${Date.now()}-${part.originalFilename}`, // Custom naming
   });
 
   return new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
       if (err) {
-        console.error("Formidable file parsing error:", err.message, err.stack);
+        console.error("Formidable parsing error:", err.message, err.stack);
         reject(err);
+      } else {
+        console.log("Fields received:", fields);
+        console.log("Files received:", files);
+        resolve({ fields, files });
       }
-      else resolve({ fields, files });
     });
   });
 };
@@ -66,16 +70,43 @@ export default async function handler(req, res) {
         ftAlignment,
       } = fields;
 
+      console.log("Parsed fields:", fields);
+      console.log("Parsed files:", files);
+
       const logo = files.logo && files.logo.newFilename ? `/uploads/${files.logo.newFilename}` : null;
       const image = files.image && files.image.newFilename ? `/uploads/${files.image.newFilename}` : null;
 
+      console.log("Logo path:", logo);
+      console.log("Image path:", image);
 
       if (!logo && files.logo) {
-        console.error("File upload issue: 'logo' file is missing 'newFilename'");
+        console.error("Logo file path is null or invalid.");
+      }
+      
+      if (!image && files.image) {
+        console.error("Image file path is null or invalid.");
       }
 
-      if (!image && files.image) {
-        console.error("File upload issue: 'image' file is missing 'newFilename'");
+      if (files.logo) {
+        console.log("Logo file path:", path.join(uploadDir, files.logo.newFilename));
+      }
+
+      if (files.logo) {
+        console.log("Logo file details:", files.logo);
+        if (!files.logo.newFilename) {
+          console.error("Logo file is missing 'newFilename'");
+        }
+      }
+
+      if (files.image) {
+        console.log("Image file path:", path.join(uploadDir, files.image.newFilename));
+      }
+
+      if (files.image) {
+        console.log("Image file details:", files.image);
+        if (!files.image.newFilename) {
+          console.error("Image file is missing 'newFilename'");
+        }
       }
 
       if (!files.logo && !files.image) {
@@ -91,7 +122,9 @@ export default async function handler(req, res) {
       }
 
       form.on('error', (err) => {
-        console.error('Formidable error occurred:', err.message);
+        if (err.message.includes("maxFileSize exceeded")) {
+          console.error("File size exceeds limit");
+        }
       });
 
       // MongoDB connection
