@@ -1,111 +1,93 @@
+import nextCors from "nextjs-cors";
 import formidable from "formidable";
 import fs from "fs";
-import { MongoClient } from "mongodb";
 import path from "path";
+import { MongoClient } from "mongodb";
 
 export const config = {
   api: {
-    bodyParser: false, // Disable the default body parser for file uploads
+    bodyParser: false, // Disable default body parser for file uploads
   },
 };
 
-export default async function handler(req, res) {
-  if (req.method === "POST") {
-    console.log("Request received at /api/uploadEmailConfig");
+// Utility to parse formidable forms
+const parseForm = (req) => {
+  const uploadDir = path.join(process.cwd(), "public/uploads");
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
 
-    const uploadDir = path.join(process.cwd(), "public/uploads");
+  const form = formidable({
+    uploadDir,
+    keepExtensions: true,
+    maxFileSize: 10 * 1024 * 1024, // Max file size (10 MB)
+    filename: (name, ext, part) => `${Date.now()}-${part.originalFilename}`, // Custom file naming
+  });
 
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    const form = formidable({
-      uploadDir, // Specify upload directory
-      keepExtensions: true, // Keep file extensions
-      maxFileSize: 10 * 1024 * 1024, // Max file size (10 MB)
-      filename: (name, ext, part) => {
-        // Custom file naming logic
-        return `${Date.now()}-${part.originalFilename}`;
-      },
+  return new Promise((resolve, reject) => {
+    form.parse(req, (err, fields, files) => {
+      if (err) reject(err);
+      else resolve({ fields, files });
     });
+  });
+};
 
+export default async function handler(req, res) {
+  // Apply CORS middleware
+  await nextCors(req, res, {
+    // Allow all origins during development; adjust for production
+    origin: "https://email-template-maker-w5ag-fisfaeq4h-46-debugs-projects.vercel.app/",
+    methods: ["POST", "GET", "OPTIONS"],
+    optionsSuccessStatus: 200, // Handle older browsers (legacy CORS support)
+  });
+
+  if (req.method === "POST") {
     try {
-      form.parse(req, async (err, fields, files) => {
-        if (err) {
-          console.error("Error parsing form data:", err);
-          return res.status(500).json({ error: "Failed to process form data" });
-        }
+      // Parse the form data
+      const { fields, files } = await parseForm(req);
 
-        console.log("Parsed fields:", fields);
-        console.log("Parsed files:", files);
+      // Extract fields and file paths
+      const {
+        title,
+        description,
+        footer,
+        lShape,
+        fSize,
+        fColor,
+        fAlignment,
+        tSize,
+        tColor,
+        tAlignment,
+        ftSize,
+        ftColor,
+        ftAlignment,
+      } = fields;
 
-        // Extract form fields
-        const {
-          title,
-          description,
-          footer,
-          lShape,
-          fSize,
-          fColor,
-          fAlignment,
-          tSize,
-          tColor,
-          tAlignment,
-          ftSize,
-          ftColor,
-          ftAlignment,
-        } = fields;
+      const logo = files.logo ? `/uploads/${files.logo.newFilename}` : null;
+      const image = files.image ? `/uploads/${files.image.newFilename}` : null;
 
-        // Extract uploaded file paths
-        const logo = files.logo ? `/uploads/${files.logo[0].newFilename}` : null;
-        const image = files.image ? `/uploads/${files.image[0].newFilename}` : null;
+      // MongoDB connection
+      const client = await MongoClient.connect(process.env.MONGODB_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+      });
 
-        // MongoDB client connection
-        let client;
-        try {
-          client = await MongoClient.connect(process.env.MONGODB_URI, { useUnifiedTopology: true });
-        } catch (dbConnError) {
-          console.error("Error connecting to MongoDB:", dbConnError);
-          return res.status(500).json({ error: "Failed to connect to MongoDB" });
-        }
+      const db = client.db("EMAIL_BUILDER");
+      const collection = db.collection("template");
 
-        const db = client.db("EMAIL_BUILDER");
-        const collection = db.collection("template");
+      // Check for an existing template and update or insert
+      const latestTemplate = await collection
+        .find()
+        .sort({ createdAt: -1 })
+        .limit(1)
+        .toArray();
 
-        try {
-          // Find the most recent template, if exists
-          const latestTemplate = await collection.find().sort({ createdAt: -1 }).limit(1).toArray();
-
-          if (latestTemplate.length > 0) {
-            // If a latest template exists, update it
-            const result = await collection.updateOne(
-              { _id: latestTemplate[0]._id }, // Find the latest template by ID
-              {
-                $set: {
-                  title,
-                  description,
-                  footer,
-                  lShape,
-                  logo,
-                  image,
-                  fSize,
-                  fColor,
-                  fAlignment,
-                  tSize,
-                  tColor,
-                  tAlignment,
-                  ftSize,
-                  ftColor,
-                  ftAlignment,
-                  updatedAt: new Date(), // Optional: timestamp for when updated
-                },
-              }
-            );
-            console.log("Template updated in MongoDB:", result);
-            res.status(200).json({ message: "Email template updated successfully", data: result });
-          } else {
-            // If no previous template exists, insert a new one
-            const result = await collection.insertOne({
+      let result;
+      if (latestTemplate.length > 0) {
+        result = await collection.updateOne(
+          { _id: latestTemplate[0]._id },
+          {
+            $set: {
               title,
               description,
               footer,
@@ -121,25 +103,43 @@ export default async function handler(req, res) {
               ftSize,
               ftColor,
               ftAlignment,
-              createdAt: new Date(), // New entry timestamp
-            });
-
-            console.log("New template saved to MongoDB:", result);
-            res.status(201).json({ message: "Email template saved successfully", data: result });
+              updatedAt: new Date(),
+            },
           }
-        } catch (dbError) {
-          console.error("Error saving to database:", dbError);
-          res.status(500).json({ error: "Database operation failed" });
-        } finally {
-          await client.close();
-        }
+        );
+      } else {
+        result = await collection.insertOne({
+          title,
+          description,
+          footer,
+          lShape,
+          logo,
+          image,
+          fSize,
+          fColor,
+          fAlignment,
+          tSize,
+          tColor,
+          tAlignment,
+          ftSize,
+          ftColor,
+          ftAlignment,
+          createdAt: new Date(),
+        });
+      }
+
+      await client.close();
+
+      // Respond with success
+      res.status(200).json({
+        message: "Template saved/updated successfully",
+        data: result,
       });
-    } catch (parseError) {
-      console.error("Unexpected error during file parsing:", parseError);
-      res.status(500).json({ error: "Unexpected error during file parsing" });
+    } catch (error) {
+      console.error("Error in handler:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   } else {
-    console.error(`Unsupported method: ${req.method}`);
     res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 }
