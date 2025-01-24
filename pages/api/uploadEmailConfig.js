@@ -3,6 +3,7 @@ import formidable from "formidable";
 import fs from "fs";
 import path from "path";
 import { MongoClient } from "mongodb";
+import mime from 'mime-types'; // Import mime-types for file type validation
 
 export const config = {
   api: {
@@ -22,7 +23,7 @@ const parseForm = (req) => {
     uploadDir,
     keepExtensions: true,
     maxFileSize: 10 * 1024 * 1024, // 10 MB
-    filename: (name, ext, part) => `${Date.now()}-${part.originalFilename}`, // Custom naming
+    filename: (name, ext, part) => `${Date.now()}-${part.originalFilename}`,
   });
 
   return new Promise((resolve, reject) => {
@@ -31,8 +32,6 @@ const parseForm = (req) => {
         console.error("Formidable parsing error:", err.message, err.stack);
         reject(err);
       } else {
-        console.log("Fields received:", fields);
-        console.log("Files received:", files);
         resolve({ fields, files });
       }
     });
@@ -70,62 +69,23 @@ export default async function handler(req, res) {
         ftAlignment,
       } = fields;
 
-      console.log("Parsed fields:", fields);
-      console.log("Parsed files:", files);
-
       const logo = files.logo && files.logo.newFilename ? `/uploads/${files.logo.newFilename}` : null;
       const image = files.image && files.image.newFilename ? `/uploads/${files.image.newFilename}` : null;
 
-      console.log("Logo path:", logo);
-      console.log("Image path:", image);
-
-      if (!logo && files.logo) {
-        console.error("Logo file path is null or invalid.");
-      }
-      
-      if (!image && files.image) {
-        console.error("Image file path is null or invalid.");
-      }
-
+      // Validate file types
       if (files.logo) {
-        console.log("Logo file path:", path.join(uploadDir, files.logo.newFilename));
-      }
-
-      if (files.logo) {
-        console.log("Logo file details:", files.logo);
-        if (!files.logo.newFilename) {
-          console.error("Logo file is missing 'newFilename'");
+        const logoMimeType = mime.lookup(files.logo.originalFilename);
+        if (!logoMimeType || !logoMimeType.startsWith('image/')) {
+          return res.status(400).json({ error: 'Invalid logo file type' });
         }
       }
 
       if (files.image) {
-        console.log("Image file path:", path.join(uploadDir, files.image.newFilename));
-      }
-
-      if (files.image) {
-        console.log("Image file details:", files.image);
-        if (!files.image.newFilename) {
-          console.error("Image file is missing 'newFilename'");
+        const imageMimeType = mime.lookup(files.image.originalFilename);
+        if (!imageMimeType || !imageMimeType.startsWith('image/')) {
+          return res.status(400).json({ error: 'Invalid image file type' });
         }
       }
-
-      if (!files.logo && !files.image) {
-        console.error("No files uploaded.");
-      }
-
-      if (files.logo && !fs.existsSync(path.join(uploadDir, files.logo.newFilename))) {
-        console.error("Uploaded 'logo' file does not exist:", files.logo.newFilename);
-      }
-
-      if (files.image && !fs.existsSync(path.join(uploadDir, files.image.newFilename))) {
-        console.error("Uploaded 'image' file does not exist:", files.image.newFilename);
-      }
-
-      form.on('error', (err) => {
-        if (err.message.includes("maxFileSize exceeded")) {
-          console.error("File size exceeds limit");
-        }
-      });
 
       // MongoDB connection
       const client = await MongoClient.connect(process.env.MONGODB_URI, {
@@ -197,7 +157,7 @@ export default async function handler(req, res) {
         data: result,
       });
     } catch (error) {
-      console.error("Error in handler:", error.massage, error.stack);
+      console.error("Error in handler:", error.message, error.stack);
       res.status(500).json({ error: "Internal server error", details: error.message });
     }
   } else {
