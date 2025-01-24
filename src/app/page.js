@@ -127,7 +127,7 @@ const page = () => {
     }
 
     try {
-      const response = await fetch("/api/uploadEmailConfig", {
+      const response = await fetch("https://email-template-maker-w5ag.vercel.app/api/uploadEmailConfig", {
         method: "POST",
         body: formData, // Pass the FormData object directly
       });
